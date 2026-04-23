@@ -1,31 +1,76 @@
 package com.example.demo.config;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+import com.example.demo.services.UserDetailsServiceImpl;
+
+
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
-	@Bean
-	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-	    http
-	        .authorizeHttpRequests(auth -> auth
-	            .requestMatchers("/h2-console/**").permitAll()  // 👈 whitelist h2
-	            .requestMatchers("/admin/**").hasRole("ADMIN")
-	            .anyRequest().authenticated()
-	        )
-	        .formLogin(Customizer.withDefaults())
-	        .csrf(csrf -> csrf
-	            .ignoringRequestMatchers("/h2-console/**")      // 👈 disable CSRF for h2
-	        )
-	        .headers(headers -> headers
-	            .frameOptions(frame -> frame.sameOrigin())      // 👈 allow iframes
-	        );
+	
+    @Autowired
+    private JwtFilter jwtFilter;
+	
+    @Autowired
+    private UserDetailsServiceImpl userDetailsServiceImpl; 
+    
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
 
-	    return http.build();
-	}
+
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration config)
+            throws Exception {
+        return config.getAuthenticationManager();
+    }
+    
+    @Bean
+    public DaoAuthenticationProvider authenticationProvider() {
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsServiceImpl);
+
+        provider.setPasswordEncoder(passwordEncoder());       
+        return provider;
+    }
+
+    
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/auth/**").permitAll()      
+                .requestMatchers("/h2-console/**").permitAll()
+                .requestMatchers("/books/public").permitAll()
+                .requestMatchers("/authors/**").permitAll()
+                .requestMatchers("/books/**").permitAll()
+                .anyRequest().authenticated()
+            )
+            .sessionManagement(session -> session
+                .sessionCreationPolicy(SessionCreationPolicy.STATELESS) 
+            )
+            .csrf(csrf -> csrf.ignoringRequestMatchers("/h2-console/**", "/auth/**", "/authors/**", "/books/**"))
+            .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
+            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class); 
+
+        return http.build();
+    }
+
 }
